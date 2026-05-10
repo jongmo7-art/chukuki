@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>측우기 測雨器 — 웹 시뮬레이션</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">🌧</span>
+        <span class="title">측우기 <span class="hanja">測雨器</span></span>
+      </div>
+      <nav class="topnav">
+        <button id="btn-tour"     class="navbtn" type="button">가이드</button>
+        <button id="btn-history"  class="navbtn" type="button">역사</button>
+        <button id="btn-quiz"     class="navbtn" type="button">퀴즈</button>
+        <button id="btn-settings" class="navbtn" type="button">설정</button>
+      </nav>
+    </header>
+
+    <main class="stage">
+      <canvas id="scene"></canvas>
+
+      <!-- 좌측: 강수 제어 + 측정 -->
+      <div id="left-panel" class="side-panel left">
+        <div class="panel-section">
+          <h3 class="section-title">강수 제어</h3>
+          <button id="btn-rain-toggle" class="rain-toggle-btn" type="button">
+            <span id="rain-icon">🌧</span>
+            <span id="rain-label">비 내리기</span>
+          </button>
+          <div class="ctrl-label">강도</div>
+          <div class="intensity-gauge"><div class="intensity-gauge-fill" style="width:13%"></div></div>
+          <div style="height:8px"></div>
+          <div class="intensity-btns">
+            <button class="intens-btn" data-key="소우">소우<br><small>小雨 · 2 mm/h</small></button>
+            <button class="intens-btn active" data-key="보통">보통비<br><small>普通 · 8 mm/h</small></button>
+            <button class="intens-btn" data-key="큰비">큰비<br><small>大雨 · 25 mm/h</small></button>
+            <button class="intens-btn" data-key="폭우">폭우<br><small>暴雨 · 60 mm/h</small></button>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <h3 class="section-title">현재 수위</h3>
+          <div class="measurement-display">
+            <div class="measure-value">
+              <span id="depth-chon" class="big-num">0</span>
+              <span class="unit">촌</span>
+              <span id="depth-pun" class="big-num">0</span>
+              <span class="unit">분</span>
+            </div>
+            <div id="depth-mm" class="depth-mm">0.0 mm</div>
+            <div class="depth-bar-wrap">
+              <div class="depth-bar">
+                <div id="depth-fill" class="depth-fill" style="height:0%"></div>
+              </div>
+              <div class="bar-ticks">
+                <div class="bar-tick"><div class="bar-tick-line"></div><div class="bar-tick-label main">10촌</div></div>
+                <div class="bar-tick"><div class="bar-tick-line"></div><div class="bar-tick-label">8촌</div></div>
+                <div class="bar-tick"><div class="bar-tick-line"></div><div class="bar-tick-label main">5촌</div></div>
+                <div class="bar-tick"><div class="bar-tick-line"></div><div class="bar-tick-label">3촌</div></div>
+                <div class="bar-tick"><div class="bar-tick-line"></div><div class="bar-tick-label main">0</div></div>
+              </div>
+            </div>
+            <div class="rain-rate-badge" id="rate-badge" style="display:none">
+              <span class="label">현재 강수율</span>
+              <span class="value" id="rate-badge-val">— mm/h</span>
+            </div>
+          </div>
+          <button id="btn-measure" class="measure-btn" type="button">측우침으로 측정</button>
+          <button id="btn-record"  class="record-btn"  type="button" disabled>기록 남기기</button>
+          <button id="btn-reset-water" class="reset-water-btn" type="button">측우기 비우기 ↺</button>
+        </div>
+
+        <div class="panel-section">
+          <h3 class="section-title">강수 기록부 <small style="font-size:10px;color:var(--text-dim);font-weight:400;">(測雨記)</small></h3>
+          <div id="record-list" class="record-list">
+            <p class="empty-msg">아직 기록이 없습니다</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 우측: 부속 정보 패널 -->
+      <aside id="info-panel" class="info-panel" aria-live="polite">
+        <div class="info-empty">
+          <h2>부속을 클릭하세요</h2>
+          <p>측우기의 각 부분을 클릭하면 이름·역할·역사적 의미가 표시됩니다.</p>
+          <ul class="legend">
+            <li><span class="dot dot-vessel"></span>측우기 (測雨器) — 청동 그릇</li>
+            <li><span class="dot dot-stand"></span>측우대 (測雨臺) — 돌 받침</li>
+            <li><span class="dot dot-ruler"></span>측우침 (測雨針) — 눈금자</li>
+          </ul>
+        </div>
+        <div class="info-content" hidden>
+          <button class="info-close" type="button" aria-label="닫기">×</button>
+          <div class="part-tag"></div>
+          <div class="part-name"></div>
+          <div class="part-hanja"></div>
+          <div class="part-en"></div>
+          <div class="part-material"></div>
+          <div class="part-dimensions"></div>
+          <p class="part-role"></p>
+          <p class="part-desc"></p>
+          <p class="part-source"></p>
+        </div>
+      </aside>
+
+      <!-- 날씨 HUD -->
+      <div id="weather-hud" class="weather-hud">
+        <span class="weather-icon" id="hud-icon">🌧</span>
+        <span class="weather-text" id="hud-text">비 내리는 중</span>
+        <span class="weather-rate" id="hud-rate">8 mm/h</span>
+        <span class="weather-accum" id="hud-accum">누계 0.0 mm</span>
+      </div>
+
+      <button id="btn-reset" class="reset-btn" type="button" title="시점 초기화">↺ 시점</button>
+    </main>
+
+    <footer class="bottombar">
+      <div class="ctrl-row">
+        <label>시간 속도
+          <select id="speed-select">
+            <option value="1">실시간 (1×)</option>
+            <option value="60">60× (1분/초)</option>
+            <option value="600" selected>600× (10분/초)</option>
+            <option value="3600">3600× (1시간/초)</option>
+          </select>
+        </label>
+        <label>날짜
+          <input type="date" id="date-input" />
+        </label>
+        <label>관측지
+          <select id="loc-select">
+            <option value="seoul" selected>한양 (서울)</option>
+            <option value="jeonju">전주 (全州)</option>
+            <option value="gyeongju">경주 (慶州)</option>
+            <option value="pyongyang">평양 (平壤)</option>
+          </select>
+        </label>
+        <label class="chk"><input id="chk-ruler" type="checkbox" checked /> 측우침 표시</label>
+        <label class="chk"><input id="chk-rain-vis" type="checkbox" checked /> 빗줄기 표시</label>
+      </div>
+    </footer>
+
+    <!-- 가이드 투어 -->
+    <div id="tour-overlay" class="overlay" hidden>
+      <div class="dialog">
+        <h2 id="tour-title"></h2>
+        <p id="tour-body"></p>
+        <div class="dialog-actions">
+          <button id="tour-skip" type="button" class="ghost">건너뛰기</button>
+          <button id="tour-prev" type="button" class="ghost">이전</button>
+          <button id="tour-next" type="button" class="primary">다음</button>
+        </div>
+        <div class="tour-progress" id="tour-dots" aria-hidden="true"></div>
+      </div>
+    </div>
+
+    <!-- 역사 모달 -->
+    <div id="history-overlay" class="overlay" hidden>
+      <div class="dialog wide">
+        <button class="dialog-close" data-close="history" type="button" aria-label="닫기">×</button>
+        <h2>측우기의 역사 <span style="font-size:14px;color:var(--text-dim);font-weight:400;">測雨器 歷史</span></h2>
+        <ol class="timeline" id="history-list"></ol>
+      </div>
+    </div>
+
+    <!-- 퀴즈 모달 -->
+    <div id="quiz-overlay" class="overlay" hidden>
+      <div class="dialog">
+        <button class="dialog-close" data-close="quiz" type="button" aria-label="닫기">×</button>
+        <h2>측우기 퀴즈</h2>
+        <p id="quiz-question" class="quiz-q"></p>
+        <div id="quiz-choices" class="quiz-choices"></div>
+        <div id="quiz-feedback" class="quiz-feedback"></div>
+        <div class="dialog-actions">
+          <span id="quiz-progress" class="quiz-progress"></span>
+          <button id="quiz-next" type="button" class="primary" hidden>다음 문제</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 설정 모달 -->
+    <div id="settings-overlay" class="overlay" hidden>
+      <div class="dialog">
+        <button class="dialog-close" data-close="settings" type="button" aria-label="닫기">×</button>
+        <h2>설정</h2>
+        <label class="chk"><input id="chk-shadows"     type="checkbox" /> 그림자 (성능 부담)</label>
+        <label class="chk"><input id="chk-highcontrast" type="checkbox" /> 고대비 모드</label>
+        <label class="chk"><input id="chk-low"          type="checkbox" /> 저성능 모드 (모바일)</label>
+        <div class="muted small" style="margin-top:16px;">
+          <p>마우스 좌클릭 드래그로 회전, 휠로 확대/축소, 우클릭 드래그로 이동.</p>
+          <p>키보드: <kbd>Space</kbd> 비 ON/OFF &nbsp; <kbd>M</kbd> 측정 &nbsp; <kbd>R</kbd> 시점 초기화 &nbsp; <kbd>Delete</kbd> 비우기</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
