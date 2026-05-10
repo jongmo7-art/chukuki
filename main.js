@@ -93,6 +93,11 @@ const waterGlow = new THREE.PointLight(0x50b0ff, 0, 0.5);
 waterGlow.position.set(0, 0.05, 0);
 scene.add(waterGlow);
 
+const measLight = new THREE.SpotLight(0xfff8e8, 0, 1.0, Math.PI * 0.22, 0.45);
+measLight.position.set(0, 0.78, 0.10);
+scene.add(measLight);
+scene.add(measLight.target);
+
 // 비올 때 하늘 어두워지는 효과용 ambient
 const rainAmbient = new THREE.AmbientLight(0x405060, 0);
 scene.add(rainAmbient);
@@ -114,8 +119,8 @@ const mats = {
   waterSurf:   new THREE.MeshStandardMaterial({ color: 0x60b8f8, transparent: true, opacity: 0.55, roughness: 0.0,  metalness: 0.0 }),
   ground:      new THREE.MeshStandardMaterial({ color: 0x2a3448, metalness: 0, roughness: 1.0 }),
   stone2:      new THREE.MeshStandardMaterial({ color: 0x3a4258, metalness: 0, roughness: 0.95 }),
-  rain:        new THREE.LineBasicMaterial({ color: 0x7ab8e8, transparent: true, opacity: 0.45 }),
-  ripple:      new THREE.MeshBasicMaterial({ color: 0x8ac8f0, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
+  rain:        new THREE.LineBasicMaterial({ color: 0xe8f4ff, transparent: true, opacity: 0.55 }),
+  ripple:      new THREE.MeshBasicMaterial({ color: 0xa8d4f0, transparent: true, opacity: 0.75, side: THREE.DoubleSide }),
 };
 
 /* ═══════════════════════════════════════════════
@@ -289,7 +294,7 @@ function buildVessel() {
 /* ═══════════════════════════════════════════════
    측우침 (測雨針) — 대나무 눈금자
    ═══════════════════════════════════════════════ */
-let rulerGroup, rulerMeasureTarget = 0;
+let rulerGroup, rulerMeasureTarget = 0, waterMarkMesh, wetMesh;
 function buildRuler() {
   rulerGroup = new THREE.Group();
 
@@ -333,6 +338,27 @@ function buildRuler() {
   handle.rotation.x = Math.PI / 2;
   rulerGroup.add(handle);
 
+  // 수위 표시 링 — 측정 시 물 깊이 위치를 밝게 표시
+  waterMarkMesh = new THREE.Mesh(
+    new THREE.TorusGeometry(RULER.r * 2.8, RULER.r * 0.8, 8, 20),
+    new THREE.MeshStandardMaterial({
+      color: 0x60e8ff, emissive: 0x30c8ff, emissiveIntensity: 2.5,
+      transparent: true, opacity: 0,
+    })
+  );
+  waterMarkMesh.rotation.x = Math.PI / 2;
+  rulerGroup.add(waterMarkMesh);
+
+  // 침수 부분 표시 — 측정 시 젖은 구간을 어둡게 표시
+  wetMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(RULER.r * 1.12, RULER.r * 1.22, RULER.len, 8),
+    new THREE.MeshStandardMaterial({
+      color: 0x1e4010, metalness: 0.1, roughness: 0.35,
+      transparent: true, opacity: 0,
+    })
+  );
+  rulerGroup.add(wetMesh);
+
   // 초기 위치: 측우기 오른쪽에 세워둠 (받침대 위에 서 있도록 bottom=y=0)
   rulerGroup.position.set(V.outerR + 0.065, RULER.len / 2, 0);
   rulerGroup.rotation.z = 0.07; // 살짝 기울기
@@ -353,10 +379,10 @@ const BASE_SPEED   = 3.5; // m/s
 
 // 강도별 파라미터
 const RAIN_PARAMS = {
-  소우: { streak: 0.032, wind: 0.008, opacity: 0.30, speed: 0.80 },
-  보통: { streak: 0.052, wind: 0.018, opacity: 0.42, speed: 1.00 },
-  큰비: { streak: 0.075, wind: 0.035, opacity: 0.55, speed: 1.25 },
-  폭우: { streak: 0.110, wind: 0.060, opacity: 0.70, speed: 1.55 },
+  소우: { streak: 0.032, wind: 0.008, opacity: 0.40, speed: 0.80 },
+  보통: { streak: 0.052, wind: 0.018, opacity: 0.55, speed: 1.00 },
+  큰비: { streak: 0.075, wind: 0.035, opacity: 0.68, speed: 1.25 },
+  폭우: { streak: 0.110, wind: 0.060, opacity: 0.82, speed: 1.55 },
 };
 
 function buildRain() {
@@ -428,14 +454,14 @@ function buildSplashes() {
   splashGeo = new THREE.BufferGeometry();
   splashGeo.setAttribute('position', new THREE.BufferAttribute(splashPos, 3));
   const splashMat = new THREE.PointsMaterial({
-    color: 0xb0d8ff, size: 0.005, transparent: true, opacity: 0.85, sizeAttenuation: true,
+    color: 0xeef6ff, size: 0.005, transparent: true, opacity: 0.90, sizeAttenuation: true,
   });
   const splashPts = new THREE.Points(splashGeo, splashMat);
   vesselGroup.add(splashPts); // vesselGroup 로컬 좌표 사용
 
   // ── 바닥 ring splash ──
   const ringMat = new THREE.MeshBasicMaterial({
-    color: 0x8ab8d8, transparent: true, opacity: 0, side: THREE.DoubleSide,
+    color: 0xd8eeff, transparent: true, opacity: 0, side: THREE.DoubleSide,
   });
   const FLOOR_Y = -(STAND.h + 0.012);
   for (let i = 0; i < GSPLASH_COUNT; i++) {
@@ -588,10 +614,23 @@ function startMeasureAnim() {
   const startY = rulerGroup.position.y;
   const startRZ = rulerGroup.rotation.z;
 
-  // 목표: 측우기 위쪽에서 내려 삽입, 바닥에 닿도록
   const targetX = 0, targetZ = 0;
-  const targetY_top = V.height + RULER.len / 2 + 0.08; // 삽입 전 대기 위치
-  const targetY_insert = RULER.len / 2;                 // 측우침 바닥 = 측우기 바닥(y=0)
+  const targetY_top    = V.height + RULER.len / 2 + 0.08;
+  const targetY_insert = RULER.len / 2;
+
+  // 외벽 투명화 준비 (측정 중에만 transparent 모드 활성)
+  mats.bronzeOuter.transparent = true;
+  mats.bronzeOuter.depthWrite = false;
+  mats.bronzeOuter.needsUpdate = true;
+
+  // 카메라 근접 시네마틱 시작
+  const returnCamPos    = camera.position.clone();
+  const returnCamTarget = controls.target.clone();
+  startCamAnim(
+    new THREE.Vector3(0.10, 0.44, 0.20),
+    new THREE.Vector3(0, V.height * 0.65, 0),
+    0.80
+  );
 
   let phase = 0; // 0=이동 1=삽입 2=읽기 3=복귀
   let phaseT = 0;
@@ -599,30 +638,65 @@ function startMeasureAnim() {
   measureAnim = {
     update(dt) {
       phaseT += dt;
+
+      const WALL_TRANSPARENT = 0.12; // 측정 중 외벽 투명도
+
       if (phase === 0) {
-        // 위로 들기 & 중앙으로 이동
+        // 측우침을 들어서 측우기 위 중앙으로 이동 + 외벽 서서히 투명화
         const p = Math.min(1, phaseT / 0.6);
         const ep = easeInOut(p);
         rulerGroup.position.x = THREE.MathUtils.lerp(startX, targetX, ep);
         rulerGroup.position.z = THREE.MathUtils.lerp(startZ, targetZ, ep);
         rulerGroup.position.y = THREE.MathUtils.lerp(startY, targetY_top, ep);
         rulerGroup.rotation.z = THREE.MathUtils.lerp(startRZ, 0, ep);
+        measLight.intensity = THREE.MathUtils.lerp(0, 1.6, ep);
+        mats.bronzeOuter.opacity = THREE.MathUtils.lerp(1.0, WALL_TRANSPARENT, ep);
         if (p >= 1) { phase = 1; phaseT = 0; }
+
       } else if (phase === 1) {
-        // 아래로 삽입
-        const p = Math.min(1, phaseT / 0.5);
+        // 수직 삽입 (외벽 투명 유지)
+        const p = Math.min(1, phaseT / 0.55);
         const ep = easeInOut(p);
         rulerGroup.position.y = THREE.MathUtils.lerp(targetY_top, targetY_insert, ep);
+        mats.bronzeOuter.opacity = WALL_TRANSPARENT;
         if (p >= 1) {
+          // 삽입 완료: 젖은 구간 + 수위 링 세팅
+          if (S.waterM > 0.0005) {
+            const wetH = Math.min(S.waterM, V.height);
+            wetMesh.scale.y = Math.max(0.0001, wetH / RULER.len);
+            wetMesh.position.y = wetH / 2 - RULER.len / 2;
+            wetMesh.material.opacity = 0;
+            waterMarkMesh.position.y = wetH - RULER.len / 2;
+            waterMarkMesh.material.opacity = 0;
+          }
           phase = 2; phaseT = 0;
           showMeasureResult();
         }
+
       } else if (phase === 2) {
-        // 읽기 유지
-        if (phaseT >= 1.8) { phase = 3; phaseT = 0; hideMeasureResult(); }
+        // 읽기 유지 — 젖은 구간·수위 링 페이드인 + 링 펄스 (외벽 투명 유지)
+        mats.bronzeOuter.opacity = WALL_TRANSPARENT;
+        const fadeIn = Math.min(1, phaseT / 0.35);
+        if (S.waterM > 0.0005) {
+          wetMesh.material.opacity       = fadeIn * 0.75;
+          waterMarkMesh.material.opacity = fadeIn * 0.95;
+          waterMarkMesh.material.emissiveIntensity = 2.2 + Math.sin(phaseT * 7) * 1.0;
+        }
+        if (phaseT >= 1.8) {
+          phase = 3; phaseT = 0;
+          hideMeasureResult();
+          startCamAnim(returnCamPos, returnCamTarget, 0.85);
+        }
+
       } else if (phase === 3) {
-        // 복귀: 0~0.35 → 위로 올리기, 0.35~1.0 → 측면으로 이동 (벽 통과 방지)
+        // 복귀: 외벽 다시 불투명하게 + 시각 효과 페이드아웃
         const p = Math.min(1, phaseT / 0.9);
+        mats.bronzeOuter.opacity = THREE.MathUtils.lerp(WALL_TRANSPARENT, 1.0, easeInOut(p));
+        const fadeOut = Math.max(0, 1 - p * 2.5);
+        wetMesh.material.opacity       = fadeOut * 0.75;
+        waterMarkMesh.material.opacity = fadeOut * 0.95;
+        measLight.intensity = THREE.MathUtils.lerp(1.6, 0, Math.min(1, p * 2));
+
         if (p < 0.35) {
           const ep = easeInOut(p / 0.35);
           rulerGroup.position.y = THREE.MathUtils.lerp(targetY_insert, targetY_top, ep);
@@ -633,7 +707,16 @@ function startMeasureAnim() {
           rulerGroup.position.z = THREE.MathUtils.lerp(targetZ, startZ, ep);
           rulerGroup.rotation.z = THREE.MathUtils.lerp(0, startRZ, ep);
         }
-        if (p >= 1) { phase = -1; S.measuring = false; measureAnim = null; }
+        if (p >= 1) {
+          mats.bronzeOuter.transparent = false;
+          mats.bronzeOuter.depthWrite = true;
+          mats.bronzeOuter.opacity = 1.0;
+          mats.bronzeOuter.needsUpdate = true;
+          wetMesh.material.opacity = 0;
+          waterMarkMesh.material.opacity = 0;
+          measLight.intensity = 0;
+          phase = -1; S.measuring = false; measureAnim = null;
+        }
       }
     }
   };
@@ -641,6 +724,31 @@ function startMeasureAnim() {
 
 function easeInOut(t) {
   return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+
+/* ═══════════════════════════════════════════════
+   카메라 애니메이션 (측정 시 근접 시네마틱)
+   ═══════════════════════════════════════════════ */
+let camAnim = null;
+
+function startCamAnim(toPos, toTarget, duration) {
+  if (!camAnim) controls.enableDamping = false;
+  camAnim = {
+    from: camera.position.clone(),
+    to: toPos.clone(),
+    fromTarget: controls.target.clone(),
+    toTarget: toTarget.clone(),
+    t: 0, duration,
+  };
+}
+
+function updateCamAnim(dt) {
+  if (!camAnim) return;
+  camAnim.t = Math.min(1, camAnim.t + dt / camAnim.duration);
+  const ep = easeInOut(camAnim.t);
+  camera.position.lerpVectors(camAnim.from, camAnim.to, ep);
+  controls.target.lerpVectors(camAnim.fromTarget, camAnim.toTarget, ep);
+  if (camAnim.t >= 1) { camAnim = null; controls.enableDamping = true; }
 }
 
 /* ═══════════════════════════════════════════════
@@ -1054,6 +1162,7 @@ function animate(ts) {
   S.lastTs = ts;
 
   controls.update();
+  updateCamAnim(dt);
   updateRain(dt);
   updateWater(dt);
   updateRipples(dt);
